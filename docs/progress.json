@@ -1,0 +1,13 @@
+{
+  "candidate": "",
+  "invite_code": "",
+  "started_at": null,
+  "steps": {
+    "1": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null},
+    "2": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null},
+    "3": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null},
+    "4": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null},
+    "5": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null},
+    "6": {"status": "locked", "unlocked_at": null, "completed_at": null, "score": null}
+  }
+}

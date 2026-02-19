@@ -1,0 +1,36 @@
+{
+  "step": 3,
+  "title": "Backups and Point-in-Time Recovery",
+  "tier": "Operational",
+  "estimated_time": "45 minutes",
+  "points": 8,
+  "objectives": [
+    "Configure automated database backups using mysqldump or another tool",
+    "Set up a cron job or systemd timer for scheduled backups",
+    "Perform a point-in-time recovery (PITR) exercise",
+    "Document the backup strategy and PITR procedure"
+  ],
+  "instructions": "## Step 3: Backups and Point-in-Time Recovery\n\n### Overview\n\nA reliable backup strategy is critical for any production database. In this step, you will configure automated backups on the primary instance and demonstrate that you can perform a point-in-time recovery.\n\n### 3.1 Plan Your Backup Strategy\n\nBefore writing scripts, decide on your approach:\n\n- **Tool**: `mysqldump` (logical backup) or `xtrabackup` (physical backup)\n- **Frequency**: How often should full backups run? (e.g., daily, every 6 hours)\n- **Retention**: How many backups to keep before rotating old ones?\n- **Storage**: Where will backups be stored? (local `/var/backups/mysql/`, or optionally S3)\n- **Binary logs**: How will you preserve binary logs for point-in-time recovery?\n\n### 3.2 Create a Backup Script\n\nWrite a backup script on the primary instance. Here is a starting point:\n\n```bash\nsudo mkdir -p /var/backups/mysql\nsudo nano /usr/local/bin/mysql-backup.sh\n```\n\nYour script should:\n1. Create a timestamped dump file\n2. Include all databases (or at minimum `ecommerce_db`)\n3. Use `--single-transaction` for InnoDB consistency\n4. Include `--routines`, `--triggers`, and `--events`\n5. Capture the binary log position (for PITR)\n6. Compress the dump to save space\n7. Remove backups older than your retention period\n\nMake the script executable:\n\n```bash\nsudo chmod +x /usr/local/bin/mysql-backup.sh\n```\n\nTest it manually first:\n\n```bash\nsudo /usr/local/bin/mysql-backup.sh\n```\n\nVerify the backup was created and is valid.\n\n### 3.3 Schedule Automated Backups\n\nSet up a cron job or systemd timer to run your backup script on a schedule.\n\n**Option A: Cron**\n\n```bash\nsudo crontab -e\n```\n\nAdd an entry like:\n\n```\n0 */6 * * * /usr/local/bin/mysql-backup.sh >> /var/log/mysql-backup.log 2>&1\n```\n\n**Option B: Systemd Timer**\n\nCreate a service unit and a timer unit. This approach provides better logging and dependency management.\n\nVerify the schedule is active:\n\n```bash\n# For cron:\nsudo crontab -l\n\n# For systemd:\nsystemctl list-timers --all | grep mysql\n```\n\n### 3.4 Point-in-Time Recovery Exercise\n\nDemonstrate PITR capability by following these steps:\n\n1. **Record the starting state**: Note the current row count in a key table\n\n```sql\nSELECT COUNT(*) FROM orders;\n```\n\n2. **Take a baseline backup** (or use your most recent automated backup)\n\n3. **Make some changes**: Insert a few test records and note the timestamp\n\n```sql\nINSERT INTO customers (first_name, last_name, email) VALUES ('PITR', 'Test', 'pitr@test.com');\n-- Note: SELECT NOW(); to capture the timestamp\n```\n\n4. **Make unwanted changes**: Simulate an accident (e.g., delete or update records)\n\n```sql\n-- Simulate accidental deletion\nDELETE FROM customers WHERE email = 'pitr@test.com';\n```\n\n5. **Recover to the point before the accident** using your backup and binary logs:\n   - Restore the baseline backup\n   - Replay binary logs up to (but not including) the unwanted change\n\n```bash\n# Identify the binary log events\nmysqlbinlog --start-datetime=\"YYYY-MM-DD HH:MM:SS\" --stop-datetime=\"YYYY-MM-DD HH:MM:SS\" /var/log/mysql/binlog.NNNNNN\n```\n\n6. **Verify the recovery**: Confirm the test record exists and the accidental change was not applied\n\n### 3.5 Document Your Work\n\nCreate `submissions/backup-strategy.md` documenting:\n\n1. **Backup tool choice** and rationale\n2. **Backup script** -- include the full script content\n3. **Schedule configuration** -- cron entry or systemd timer/service units\n4. **Retention policy** -- how many backups are kept, rotation strategy\n5. **PITR procedure** -- step-by-step instructions with commands used\n6. **PITR exercise results** -- what you did, timestamps, and verification output\n7. **Recovery Time Objective (RTO) estimate** -- how long would a full restore take?\n8. **Recommendations** -- any improvements you would make in a real production environment",
+  "deliverables": [
+    "Working backup script at /usr/local/bin/mysql-backup.sh (or similar path)",
+    "Active cron job or systemd timer for automated backups",
+    "Successful point-in-time recovery demonstration",
+    "submissions/backup-strategy.md with complete documentation"
+  ],
+  "hints": [
+    "mysqldump with --single-transaction is safe for InnoDB tables without locking",
+    "Binary logs must be enabled (from Step 2) for PITR to work",
+    "Use mysqlbinlog with --stop-datetime to replay logs up to a specific point",
+    "Compress backups with gzip to save disk space",
+    "Consider what happens if the backup script fails -- add error handling",
+    "The --source-data flag in mysqldump records the binlog position in the dump file"
+  ],
+  "validation_criteria": [
+    "A backup script exists and is executable",
+    "A cron job or systemd timer is configured and active",
+    "At least one backup file exists in the backup directory",
+    "The backup file is a valid MySQL dump (can be restored)",
+    "backup-strategy.md exists with documented PITR procedure",
+    "PITR exercise is documented with timestamps and verification"
+  ]
+}

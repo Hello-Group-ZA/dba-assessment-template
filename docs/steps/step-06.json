@@ -1,0 +1,39 @@
+{
+  "step": 6,
+  "title": "Monitoring and Failover",
+  "tier": "Advanced",
+  "estimated_time": "45 minutes",
+  "points": 8,
+  "objectives": [
+    "Install and configure database monitoring",
+    "Simulate a primary failure scenario",
+    "Promote a replica to primary",
+    "Rejoin the old primary as a replica",
+    "Document the complete failover procedure"
+  ],
+  "instructions": "## Step 6: Monitoring and Failover\n\n### Overview\n\nIn this final step, you will set up monitoring for your MySQL instances and demonstrate a manual failover procedure. This tests your ability to handle a real-world primary failure scenario.\n\n---\n\n### Part A: Monitoring Setup\n\n### 6.1 Choose a Monitoring Approach\n\nSelect one or more of the following monitoring tools:\n\n- **Percona Monitoring and Management (PMM) Client** -- comprehensive MySQL monitoring\n- **node_exporter + mysqld_exporter** -- Prometheus-compatible metrics exporters\n- **MySQL Enterprise Monitor** (if available)\n- **Custom monitoring scripts** -- basic but effective\n\nFor this assessment, any approach that provides visibility into MySQL health metrics is acceptable.\n\n### 6.2 Install Monitoring (PMM Client Example)\n\nIf using PMM Client:\n\n```bash\nsudo apt install -y pmm2-client\n```\n\nOr if using Prometheus exporters:\n\n```bash\n# node_exporter for system metrics\nsudo apt install -y prometheus-node-exporter\nsudo systemctl enable --now prometheus-node-exporter\n\n# mysqld_exporter for MySQL metrics\n# Download and configure mysqld_exporter\n```\n\n### 6.3 Configure MySQL Metrics Collection\n\nWhichever tool you choose, configure it to collect key MySQL metrics:\n\n- **Replication lag** -- Seconds_Behind_Source\n- **Query throughput** -- Questions, Com_select, Com_insert, etc.\n- **InnoDB metrics** -- buffer pool hit ratio, row operations\n- **Connection statistics** -- Threads_connected, Threads_running\n- **Slow queries** -- Slow_queries counter\n\nCreate a monitoring user if needed:\n\n```sql\nCREATE USER 'monitor'@'localhost' IDENTIFIED BY '<strong-password>';\nGRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'monitor'@'localhost';\nFLUSH PRIVILEGES;\n```\n\n### 6.4 Verify Monitoring\n\nConfirm your monitoring is collecting data:\n\n```bash\n# For node_exporter\ncurl -s http://localhost:9100/metrics | head -20\n\n# For mysqld_exporter\ncurl -s http://localhost:9104/metrics | grep mysql_up\n```\n\nOr verify with your chosen tool's status commands.\n\n### 6.5 Document the Monitoring Setup\n\nCreate `submissions/monitoring-setup.md` documenting:\n1. Tools installed and why you chose them\n2. Metrics being collected\n3. Configuration details\n4. How to verify monitoring is working\n5. Alerting recommendations (even if not implemented)\n\n---\n\n### Part B: Failover Procedure\n\n### 6.6 Pre-Failover Checklist\n\nBefore simulating a failure, verify your replication is healthy:\n\n```sql\n-- On each replica\nSHOW REPLICA STATUS\\G\n```\n\nConfirm both replicas are in sync with the primary:\n- `Replica_IO_Running: Yes`\n- `Replica_SQL_Running: Yes`\n- `Seconds_Behind_Source: 0`\n\nRecord the current binary log position on the primary:\n\n```sql\nSHOW MASTER STATUS;\n```\n\n### 6.7 Simulate Primary Failure\n\nStop MySQL on the primary to simulate a crash:\n\n```bash\n# On the primary\nsudo systemctl stop mysql\n```\n\nObserve what happens on the replicas:\n\n```sql\n-- On each replica\nSHOW REPLICA STATUS\\G\n```\n\nYou should see the IO thread stop and errors appear.\n\n### 6.8 Promote a Replica to Primary\n\nChoose the replica that is most up-to-date (check `Exec_Master_Log_Pos`). On that replica:\n\n1. **Stop the replica threads**:\n\n```sql\nSTOP REPLICA;\nRESET REPLICA ALL;\n```\n\n2. **Disable read-only mode**:\n\n```sql\nSET GLOBAL read_only = 0;\nSET GLOBAL super_read_only = 0;\n```\n\n3. **Verify the promoted replica can accept writes**:\n\n```sql\nINSERT INTO ecommerce_db.customers (first_name, last_name, email) \nVALUES ('Failover', 'Test', 'failover@test.com');\n```\n\n4. **Check binary logging is enabled** (if you need to chain other replicas):\n\n```sql\nSHOW MASTER STATUS;\n```\n\n### 6.9 Repoint the Other Replica\n\nConfigure the second replica to follow the newly promoted primary:\n\n```sql\nSTOP REPLICA;\n\nCHANGE REPLICATION SOURCE TO\n  SOURCE_HOST='<new-primary-ip>',\n  SOURCE_USER='repl_user',\n  SOURCE_PASSWORD='<password>',\n  SOURCE_LOG_FILE='<new-primary-binlog-file>',\n  SOURCE_LOG_POS=<position>;\n\nSTART REPLICA;\nSHOW REPLICA STATUS\\G\n```\n\n### 6.10 Rejoin the Old Primary as a Replica\n\nRestart MySQL on the old primary:\n\n```bash\nsudo systemctl start mysql\n```\n\nConfigure it to replicate from the new primary:\n\n```sql\n-- On the old primary\nRESET REPLICA ALL;\n\nCHANGE REPLICATION SOURCE TO\n  SOURCE_HOST='<new-primary-ip>',\n  SOURCE_USER='repl_user',\n  SOURCE_PASSWORD='<password>',\n  SOURCE_LOG_FILE='<binlog-file>',\n  SOURCE_LOG_POS=<position>;\n\nSET GLOBAL read_only = 1;\nSTART REPLICA;\nSHOW REPLICA STATUS\\G\n```\n\nVerify the old primary is now replicating correctly.\n\n### 6.11 Verify the New Topology\n\nConfirm the new topology is healthy:\n- New primary is accepting writes\n- Both replicas (including old primary) are replicating\n- Data is consistent across all instances\n\n```sql\n-- Check row counts on all instances\nSELECT COUNT(*) FROM ecommerce_db.customers;\nSELECT COUNT(*) FROM ecommerce_db.orders;\n```\n\n### 6.12 Document the Failover Procedure\n\nCreate `submissions/failover-procedure.md` documenting:\n\n1. **Pre-failover state** -- replication topology and status before the exercise\n2. **Failure simulation** -- what you did to simulate failure\n3. **Detection** -- how you detected the failure on replicas\n4. **Promotion steps** -- exact commands used to promote the replica\n5. **Repointing replicas** -- commands used to point replicas at the new primary\n6. **Rejoining old primary** -- steps to add it back as a replica\n7. **Verification** -- evidence that the new topology is healthy\n8. **Timeline** -- how long the failover took\n9. **Recommendations** -- how you would automate this in production (e.g., MHA, Orchestrator, ProxySQL)\n10. **Lessons learned** -- what could go wrong, edge cases to consider",
+  "deliverables": [
+    "Monitoring tool installed and collecting MySQL metrics",
+    "submissions/monitoring-setup.md with monitoring configuration documentation",
+    "Successful failover exercise: replica promoted to primary",
+    "Old primary rejoined as a replica",
+    "submissions/failover-procedure.md with complete failover documentation"
+  ],
+  "hints": [
+    "Prometheus node_exporter is the simplest monitoring option to set up quickly",
+    "Before promoting a replica, ensure it has fully applied all relay logs",
+    "RESET REPLICA ALL clears all replication configuration on the promoted replica",
+    "The new primary needs binary logging enabled to serve as a source for other replicas",
+    "If GTID-based replication is configured, promotion is simpler",
+    "Consider using SHOW PROCESSLIST on the promoted replica to verify no lag",
+    "The key metric for choosing which replica to promote is Exec_Master_Log_Pos"
+  ],
+  "validation_criteria": [
+    "A monitoring agent or exporter is installed and running",
+    "monitoring-setup.md exists with tool selection and configuration",
+    "Failover was executed: one replica was promoted to primary",
+    "Old primary was restarted and configured as a replica",
+    "failover-procedure.md exists with step-by-step documentation",
+    "Data consistency verified after failover (row counts match)"
+  ]
+}

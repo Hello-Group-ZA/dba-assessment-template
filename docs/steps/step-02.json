@@ -1,0 +1,36 @@
+{
+  "step": 2,
+  "title": "Install MySQL and Set Up Replication",
+  "tier": "Fundamentals",
+  "estimated_time": "60 minutes",
+  "points": 10,
+  "objectives": [
+    "Install MySQL 8.0 on both replica instances",
+    "Enable binary logging on the primary instance",
+    "Configure source-to-replica replication on both replicas",
+    "Verify data consistency across all three instances"
+  ],
+  "instructions": "## Step 2: Install MySQL and Set Up Replication\n\n### Overview\n\nYour environment has three instances: one primary (with MySQL installed) and two replicas (bare Ubuntu 22.04). In this step, you will install MySQL on the replicas, fix the primary's configuration to enable binary logging, and set up source-to-replica replication.\n\n### 2.1 Examine the Primary's Current Configuration\n\nBefore configuring replication, inspect the primary's MySQL configuration:\n\n```bash\nsudo cat /etc/mysql/mysql.conf.d/mysqld.cnf\n```\n\nYou will notice that **binary logging is disabled** in the current configuration. This is intentional -- the config file shipped with the environment has several suboptimal settings that you need to fix.\n\nKey things to check:\n\n```sql\nSHOW VARIABLES LIKE 'log_bin';\nSHOW VARIABLES LIKE 'server_id';\nSHOW VARIABLES LIKE 'binlog_format';\n```\n\nYou must enable binary logging and set a unique `server_id` on the primary for replication to work.\n\n### 2.2 Fix the Primary Configuration\n\nEdit the MySQL configuration on the primary to enable replication prerequisites:\n\n```bash\nsudo nano /etc/mysql/mysql.conf.d/mysqld.cnf\n```\n\nKey settings you need to configure:\n- `server-id` -- must be unique across all instances (e.g., 1 for primary)\n- `log_bin` -- enable binary logging\n- `binlog_format` -- set to ROW (recommended for replication)\n- `binlog_do_db` -- optionally restrict to `ecommerce_db`\n\nAfter making changes, restart MySQL:\n\n```bash\nsudo systemctl restart mysql\n```\n\nVerify binary logging is now enabled:\n\n```sql\nSHOW MASTER STATUS;\n```\n\n### 2.3 Create a Replication User on the Primary\n\nCreate a dedicated MySQL user for replication with only the required privilege:\n\n```sql\nCREATE USER 'repl_user'@'%' IDENTIFIED BY '<strong-password>';\nGRANT REPLICATION SLAVE ON *.* TO 'repl_user'@'%';\nFLUSH PRIVILEGES;\n```\n\nNote: In production you would restrict the host to specific replica IPs. Using `%` is acceptable for this assessment.\n\n### 2.4 Install MySQL 8.0 on Both Replicas\n\nSSH into each replica instance and install MySQL 8.0:\n\n```bash\nssh -i ~/.ssh/dba-assessment.pem ubuntu@<replica-ip>\n```\n\nInstall MySQL Server:\n\n```bash\nsudo apt update\nsudo apt install -y mysql-server\n```\n\nVerify the installation:\n\n```bash\nsudo systemctl status mysql\nmysql --version\n```\n\n### 2.5 Configure Each Replica\n\nOn each replica, edit the MySQL configuration:\n\n```bash\nsudo nano /etc/mysql/mysql.conf.d/mysqld.cnf\n```\n\nSet a unique `server-id` for each replica (e.g., 2 and 3). You may also want to set the replica to read-only:\n\n```\nserver-id = 2\nread_only = 1\n```\n\nRestart MySQL on each replica after configuration changes.\n\n### 2.6 Take a Consistent Snapshot from the Primary\n\nBefore starting replication, create a consistent dump of the primary database:\n\n```bash\nsudo mysqldump --all-databases --source-data=2 --single-transaction --routines --triggers --events -u root > /tmp/primary_dump.sql\n```\n\nNote the binary log file name and position from the dump output or from `SHOW MASTER STATUS`.\n\nTransfer the dump to each replica:\n\n```bash\nscp -i ~/.ssh/dba-assessment.pem /tmp/primary_dump.sql ubuntu@<replica-ip>:/tmp/\n```\n\n### 2.7 Import Data and Start Replication on Each Replica\n\nOn each replica, import the dump:\n\n```bash\nsudo mysql < /tmp/primary_dump.sql\n```\n\nThen configure the replication source:\n\n```sql\nCHANGE REPLICATION SOURCE TO\n  SOURCE_HOST='<primary-private-ip>',\n  SOURCE_USER='repl_user',\n  SOURCE_PASSWORD='<password>',\n  SOURCE_LOG_FILE='<binlog-file>',\n  SOURCE_LOG_POS=<position>;\n\nSTART REPLICA;\n```\n\n### 2.8 Verify Replication\n\nOn each replica, check replication status:\n\n```sql\nSHOW REPLICA STATUS\\G\n```\n\nConfirm that:\n- `Replica_IO_Running: Yes`\n- `Replica_SQL_Running: Yes`\n- `Seconds_Behind_Source: 0` (or very small)\n- No errors in `Last_Error`\n\nTest replication by inserting a row on the primary and verifying it appears on both replicas.\n\n### 2.9 Document Your Work\n\nCreate `submissions/replication-setup.md` documenting:\n\n1. Configuration changes made to the primary\n2. MySQL installation steps on replicas\n3. Replication user creation\n4. Dump and restore procedure\n5. CHANGE REPLICATION SOURCE command used (redact passwords)\n6. Verification results (SHOW REPLICA STATUS output)\n7. Any issues encountered and how you resolved them",
+  "deliverables": [
+    "MySQL 8.0 installed and running on both replica instances",
+    "Binary logging enabled on the primary instance",
+    "Source-to-replica replication working on both replicas",
+    "submissions/replication-setup.md documenting the full setup process"
+  ],
+  "hints": [
+    "The primary's config file deliberately has binary logging disabled -- you must enable it",
+    "Each instance needs a unique server-id value",
+    "Use --source-data or --master-data with mysqldump to capture the binlog position",
+    "The --single-transaction flag ensures a consistent snapshot without locking tables",
+    "If replication fails, check SHOW REPLICA STATUS for the Last_IO_Error or Last_SQL_Error",
+    "Make sure the security group allows MySQL traffic (port 3306) between instances"
+  ],
+  "validation_criteria": [
+    "MySQL is running on both replica instances",
+    "Binary logging is enabled on the primary (log_bin = ON)",
+    "SHOW REPLICA STATUS shows Replica_IO_Running = Yes on both replicas",
+    "SHOW REPLICA STATUS shows Replica_SQL_Running = Yes on both replicas",
+    "Data is consistent: row counts match across primary and replicas",
+    "replication-setup.md exists with documented steps"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "step": 1,
+  "title": "Connect and Document Schema",
+  "tier": "Fundamentals",
+  "estimated_time": "45 minutes",
+  "points": 8,
+  "objectives": [
+    "SSH into the primary database instance and verify connectivity",
+    "Explore the ecommerce_db database schema thoroughly",
+    "Document all tables, columns, data types, and relationships",
+    "Identify schema design issues and technical debt"
+  ],
+  "instructions": "## Step 1: Connect and Document Schema\n\n### Getting Started\n\nYour environment includes three EC2 instances: one **primary** with MySQL 8.0 already installed and two **replicas** (bare Ubuntu). The connection details are available in your GitHub Pages dashboard.\n\n### 1.1 Connect to the Primary Instance\n\nSSH into the primary instance using the private key provided during provisioning:\n\n```bash\nssh -i ~/.ssh/dba-assessment.pem ubuntu@<primary-ip>\n```\n\nOnce connected, verify MySQL is running:\n\n```bash\nsudo systemctl status mysql\n```\n\nConnect to MySQL as root:\n\n```bash\nsudo mysql\n```\n\n### 1.2 Explore the Database\n\nThe `ecommerce_db` database has been pre-loaded with a schema representing a production e-commerce platform that was migrated from an older system. It has accumulated technical debt that you will address in later steps.\n\nStart by listing the databases and switching to `ecommerce_db`:\n\n```sql\nSHOW DATABASES;\nUSE ecommerce_db;\n```\n\nExplore the schema systematically:\n\n```sql\nSHOW TABLES;\nSHOW TABLE STATUS;\n```\n\nFor each table, examine its structure:\n\n```sql\nDESCRIBE <table_name>;\nSHOW CREATE TABLE <table_name>;\n```\n\nPay attention to:\n- Column data types and whether they are appropriate\n- Primary keys and auto-increment settings\n- Foreign key constraints and their referential actions (CASCADE, RESTRICT, SET NULL)\n- Existing indexes (or lack thereof)\n- Storage engine and character set\n\n### 1.3 Examine Views and Stored Procedures\n\nThe database includes views and stored procedures. Review them:\n\n```sql\nSHOW FULL TABLES WHERE Table_type = 'VIEW';\nSHOW PROCEDURE STATUS WHERE Db = 'ecommerce_db';\n```\n\nTo see the definition of a view or procedure:\n\n```sql\nSHOW CREATE VIEW <view_name>;\nSHOW CREATE PROCEDURE <procedure_name>;\n```\n\nNote any performance concerns you spot in these definitions.\n\n### 1.4 Check for Data\n\nVerify that seed data has been loaded:\n\n```sql\nSELECT COUNT(*) FROM customers;\nSELECT COUNT(*) FROM products;\nSELECT COUNT(*) FROM orders;\nSELECT COUNT(*) FROM order_items;\n```\n\n### 1.5 Document Your Findings\n\nCreate `submissions/schema-documentation.md` in your assessment repository. Your documentation should include:\n\n1. **Table Inventory** -- List every table with a brief description of its purpose\n2. **Column Details** -- For each table, document columns, data types, nullability, and defaults\n3. **Relationships** -- Map out all foreign key relationships and their referential actions\n4. **Entity-Relationship Summary** -- A text-based or ASCII diagram showing how tables relate\n5. **Issues Identified** -- Note any schema design problems, missing indexes, inappropriate data types, or other technical debt you discover\n6. **Views and Procedures** -- Document what each view and stored procedure does, and flag any concerns\n\n### Tips\n\n- Use `INFORMATION_SCHEMA` tables for programmatic exploration if you prefer\n- The `SHOW INDEX FROM <table>` command reveals existing indexes\n- Compare foreign key columns against available indexes to spot missing ones\n- Look at TEXT vs VARCHAR usage and consider whether the choice is appropriate",
+  "deliverables": [
+    "submissions/schema-documentation.md with complete table inventory and column details",
+    "Foreign key relationship map covering all tables",
+    "List of identified schema issues (missing indexes, data type problems, etc.)",
+    "Documentation of views and stored procedures with performance observations"
+  ],
+  "hints": [
+    "There are 7 tables in the ecommerce_db database",
+    "Look carefully at which foreign key columns have indexes and which do not",
+    "Some TEXT columns could be VARCHAR -- note why that matters",
+    "The views use correlated subqueries that could be rewritten as JOINs",
+    "Check the stored procedures for row-by-row processing patterns"
+  ],
+  "validation_criteria": [
+    "schema-documentation.md exists in the submissions/ directory",
+    "All 7 tables are documented with their columns and data types",
+    "Foreign key relationships are correctly mapped",
+    "At least 3 schema issues are identified (missing indexes, type mismatches, etc.)",
+    "Views and stored procedures are described with performance observations"
+  ]
+}

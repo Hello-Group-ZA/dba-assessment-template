@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DBA Assessment</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1f4ca;</text></svg>">
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="header">
+    <div class="container header-inner">
+      <div class="header-title">
+        <span class="prompt">$</span>
+        <h1>DBA Assessment</h1>
+      </div>
+      <div class="header-meta">
+        <div class="timer" id="timer">
+          <span class="icon">&#x23F1;</span>
+          <span id="timer-value">--:--:--</span>
+        </div>
+        <a class="repo-link" id="repo-link" href="#" title="Open repository">
+          &#x1F4C2; Repository
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Candidate Info Bar ===== -->
+  <div class="info-bar">
+    <div class="container info-bar-inner" id="info-bar-content">
+      <span class="info-item">
+        <span class="label">Status:</span>
+        <span class="value">Loading...</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- ===== Progress ===== -->
+  <section class="progress-section">
+    <div class="container">
+      <div class="progress-header">
+        <span class="progress-label">Progress</span>
+        <span class="progress-stats" id="progress-stats">0/6 steps</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Connection Details ===== -->
+  <section class="connection-section" id="connection-section" style="display:none">
+    <div class="container">
+      <div class="connection-details" id="connection-details"></div>
+    </div>
+  </section>
+
+  <!-- ===== Steps ===== -->
+  <section class="steps-section">
+    <div class="container">
+      <div class="steps-list" id="steps-list">
+        <!-- Step cards are rendered by app.js -->
+        <div class="step-content-loading loading-pulse">Loading assessment data...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="refresh-info" id="refresh-time">Auto-refreshes every 60 seconds</div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

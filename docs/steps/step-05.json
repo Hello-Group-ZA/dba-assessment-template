@@ -1,0 +1,38 @@
+{
+  "step": 5,
+  "title": "Query Optimization and Production Tuning",
+  "tier": "Advanced",
+  "estimated_time": "45 minutes",
+  "points": 8,
+  "objectives": [
+    "Analyze execution plans for slow queries using EXPLAIN",
+    "Tune the MySQL configuration for production workloads",
+    "Benchmark before-and-after performance to demonstrate improvements",
+    "Document all tuning changes with supporting metrics"
+  ],
+  "instructions": "## Step 5: Query Optimization and Production Tuning\n\n### Overview\n\nThe MySQL instance was deployed with a deliberately suboptimal configuration. In this step, you will analyze query performance, tune the MySQL configuration, and benchmark the results.\n\n---\n\n### Part A: Query Analysis\n\n### 5.1 Enable the Slow Query Log\n\nFirst, check the current slow query log status:\n\n```sql\nSHOW VARIABLES LIKE 'slow_query_log%';\nSHOW VARIABLES LIKE 'long_query_time';\n```\n\nEnable the slow query log if it is not already active:\n\n```sql\nSET GLOBAL slow_query_log = 'ON';\nSET GLOBAL long_query_time = 1;\nSET GLOBAL log_queries_not_using_indexes = 'ON';\n```\n\nFor persistence across restarts, add these to the MySQL configuration file.\n\n### 5.2 Identify Slow Queries\n\nRun the views and stored procedures to generate slow query log entries:\n\n```sql\nSELECT * FROM vw_customer_order_summary;\nSELECT * FROM vw_product_performance;\nSELECT * FROM vw_recent_orders_full;\nCALL sp_recalculate_order_totals();\nCALL sp_daily_sales_report('2024-01-01', '2024-12-31');\n```\n\nAlso run common application-like queries:\n\n```sql\n-- Order lookup by customer\nSELECT o.*, oi.* FROM orders o JOIN order_items oi ON oi.order_id = o.id WHERE o.customer_id = 42;\n\n-- Product search by category with reviews\nSELECT p.*, AVG(r.rating) as avg_rating\nFROM products p\nLEFT JOIN reviews r ON r.product_id = p.id\nWHERE p.category_id = 3\nGROUP BY p.id;\n\n-- Revenue report by status\nSELECT status, COUNT(*) as order_count, SUM(total) as revenue\nFROM orders\nGROUP BY status;\n```\n\n### 5.3 Analyze with EXPLAIN\n\nFor each slow query, use EXPLAIN to understand the execution plan:\n\n```sql\nEXPLAIN SELECT * FROM vw_customer_order_summary;\nEXPLAIN FORMAT=JSON SELECT * FROM vw_customer_order_summary;\n```\n\nPay attention to:\n- **type**: aim for `ref`, `range`, or `const` instead of `ALL` (full table scan)\n- **possible_keys** and **key**: are indexes being used?\n- **rows**: how many rows are being examined?\n- **Extra**: watch for `Using filesort`, `Using temporary`, `Using where` without an index\n\nDocument the EXPLAIN output for at least 3 queries before and after optimization.\n\n---\n\n### Part B: MySQL Configuration Tuning\n\n### 5.4 Capture Baseline Metrics\n\nBefore making changes, record the current configuration and performance baselines:\n\n```sql\nSHOW VARIABLES LIKE 'innodb_buffer_pool_size';\nSHOW VARIABLES LIKE 'innodb_log_file_size';\nSHOW VARIABLES LIKE 'max_connections';\nSHOW VARIABLES LIKE 'innodb_flush_log_at_trx_commit';\nSHOW VARIABLES LIKE 'performance_schema';\nSHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_read_requests';\nSHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_reads';\n```\n\nCalculate the buffer pool hit ratio:\n\n```sql\nSELECT \n  (1 - (Innodb_buffer_pool_reads / Innodb_buffer_pool_read_requests)) * 100 AS hit_ratio_pct\nFROM (\n  SELECT \n    VARIABLE_VALUE AS Innodb_buffer_pool_reads \n  FROM performance_schema.global_status \n  WHERE VARIABLE_NAME = 'Innodb_buffer_pool_reads'\n) a,\n(\n  SELECT \n    VARIABLE_VALUE AS Innodb_buffer_pool_read_requests \n  FROM performance_schema.global_status \n  WHERE VARIABLE_NAME = 'Innodb_buffer_pool_read_requests'\n) b;\n```\n\n### 5.5 Tune the MySQL Configuration\n\nEdit the MySQL configuration file:\n\n```bash\nsudo nano /etc/mysql/mysql.conf.d/mysqld.cnf\n```\n\nKey settings to tune:\n\n| Setting | Why |\n|---------|-----|\n| `innodb_buffer_pool_size` | Should be ~70-80% of available RAM for a dedicated DB server |\n| `innodb_log_file_size` | Larger log files reduce checkpoint frequency (e.g., 256M) |\n| `innodb_flush_log_at_trx_commit` | Consider the durability vs. performance trade-off |\n| `max_connections` | Set based on expected workload, not too high |\n| `slow_query_log` | Enable for ongoing monitoring |\n| `long_query_time` | Set threshold (e.g., 1 second) |\n| `performance_schema` | Enable for detailed monitoring |\n| `innodb_file_per_table` | Should be ON for easier management |\n| `skip_name_resolve` | Improves connection speed |\n\nFor a t3.small instance (2 GB RAM), reasonable values might be:\n- `innodb_buffer_pool_size = 1G` (approximately 50% of 2 GB, leaving room for OS and other processes)\n- `innodb_log_file_size = 256M`\n- `max_connections = 100`\n\nRestart MySQL after changes:\n\n```bash\nsudo systemctl restart mysql\n```\n\n### 5.6 Benchmark After Tuning\n\nRe-run the same queries and capture timing:\n\n```sql\n-- Use the built-in profiling or simple timing\nSET profiling = 1;\n\nSELECT * FROM vw_customer_order_summary;\nSELECT * FROM vw_product_performance;\n\nSHOW PROFILES;\n```\n\nOr use command-line timing:\n\n```bash\ntime mysql -u root -e \"SELECT * FROM vw_customer_order_summary\" ecommerce_db > /dev/null\n```\n\nCompare the before and after results.\n\n---\n\n### 5.7 Document Your Work\n\nCreate `submissions/tuning-report.md` documenting:\n\n1. **Baseline configuration** -- original settings and performance metrics\n2. **Slow queries identified** -- list of queries with EXPLAIN output before optimization\n3. **Configuration changes** -- every setting changed with rationale\n4. **Optimized EXPLAIN output** -- show the execution plans after adding indexes and tuning\n5. **Before/after comparison** -- timing results, buffer pool hit ratio, etc.\n6. **My.cnf diff** -- show what changed in the config file\n7. **Recommendations** -- additional improvements for a production deployment",
+  "deliverables": [
+    "submissions/tuning-report.md with before-and-after performance metrics",
+    "Slow query log enabled in MySQL configuration",
+    "InnoDB buffer pool size tuned appropriately for instance memory",
+    "Performance schema enabled",
+    "EXPLAIN analysis for at least 3 queries"
+  ],
+  "hints": [
+    "The default innodb_buffer_pool_size (128M) is far too small -- increase it based on available RAM",
+    "The slow query log is likely disabled by default -- enable it to catch problematic queries",
+    "EXPLAIN FORMAT=JSON provides more detail than plain EXPLAIN",
+    "Performance improvements from indexing (Step 4) and config tuning compound together",
+    "Check the buffer pool hit ratio before and after -- it should improve significantly",
+    "The t3.small instance has 2 GB RAM -- do not set buffer pool larger than ~1 GB",
+    "Use SET profiling = 1 to easily time queries within a session"
+  ],
+  "validation_criteria": [
+    "Slow query log is enabled (slow_query_log = ON)",
+    "innodb_buffer_pool_size has been increased from the default",
+    "performance_schema is enabled",
+    "tuning-report.md exists with before/after metrics",
+    "At least 3 queries have EXPLAIN output documented",
+    "Configuration changes are listed with rationale"
+  ]
+}

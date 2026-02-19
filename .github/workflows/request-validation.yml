@@ -1,0 +1,288 @@
+################################################################################
+# Request Step Validation
+#
+# Candidates run this workflow to have their work for a specific step checked
+# by the validator Lambda. The Lambda connects to the candidate's MySQL
+# instance, runs automated checks, and returns pass/fail results.
+#
+# Prerequisites (set by admin CLI when creating the candidate repo):
+#   - secrets.AWS_ROLE_ARN  : IAM role ARN for OIDC authentication
+#   - secrets.INVITE_CODE   : The candidate's invite code
+################################################################################
+
+name: Request Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      step_number:
+        description: "Step number to validate"
+        required: true
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+          - "6"
+
+jobs:
+  validate-step:
+    name: "Validate Step ${{ inputs.step_number }}"
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write    # OIDC authentication with AWS
+      contents: write    # Pull latest content pushed by Lambda
+
+    env:
+      AWS_REGION: af-south-1
+      LAMBDA_FUNCTION: dba-assessment-validator
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout repository
+      # ------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Configure AWS credentials via OIDC
+      # ------------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ------------------------------------------------------------------
+      # 3. Check that the requested step is unlocked
+      # ------------------------------------------------------------------
+      - name: Check step is unlocked
+        id: check-progress
+        env:
+          STEP_NUMBER: ${{ inputs.step_number }}
+        run: |
+          PROGRESS_FILE="docs/progress.json"
+
+          if [[ ! -f "$PROGRESS_FILE" ]]; then
+            echo "No progress.json found -- assuming Step 1 is available."
+            if [[ "$STEP_NUMBER" != "1" ]]; then
+              echo "::error::Step $STEP_NUMBER is not unlocked yet. Complete earlier steps first."
+
+              {
+                echo "## Step $STEP_NUMBER is Locked"
+                echo ""
+                echo "You must complete earlier steps before validating Step $STEP_NUMBER."
+                echo ""
+                echo "No \`progress.json\` was found in the repository. Please start with **Step 1**."
+              } >> "$GITHUB_STEP_SUMMARY"
+
+              exit 1
+            fi
+            exit 0
+          fi
+
+          echo "Current progress:"
+          cat "$PROGRESS_FILE"
+
+          # Determine current active step from the steps object
+          STEP_STATUS=$(jq -r --arg step "$STEP_NUMBER" '.steps[$step].status // "locked"' "$PROGRESS_FILE")
+          # Find the highest non-locked step number as "current step"
+          CURRENT_STEP=$(jq -r '[.steps | to_entries[] | select(.value.status != "locked") | .key | tonumber] | max // 1' "$PROGRESS_FILE")
+
+          if [[ "$STEP_STATUS" == "locked" ]] && [[ "$STEP_NUMBER" -gt "$CURRENT_STEP" ]]; then
+            echo "::error::Step $STEP_NUMBER is locked. Current step: $CURRENT_STEP"
+
+            {
+              echo "## Step $STEP_NUMBER is Locked"
+              echo ""
+              echo "You are currently on **Step $CURRENT_STEP**. Complete it before moving to Step $STEP_NUMBER."
+              echo ""
+              echo "Steps must be completed in order."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            exit 1
+          fi
+
+          if [[ "$STEP_STATUS" == "passed" ]]; then
+            echo "::warning::Step $STEP_NUMBER has already been validated and passed."
+          fi
+
+          echo "step_status=$STEP_STATUS" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------------------
+      # 4. Invoke validator Lambda
+      # ------------------------------------------------------------------
+      - name: Invoke validator Lambda
+        id: invoke-lambda
+        env:
+          INVITE_CODE: ${{ secrets.INVITE_CODE }}
+          STEP_NUMBER: ${{ inputs.step_number }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          echo "Invoking validator Lambda for Step $STEP_NUMBER..."
+
+          PAYLOAD=$(jq -n \
+            --arg invite_code "$INVITE_CODE" \
+            --arg step_number "$STEP_NUMBER" \
+            --arg repo_name "$REPO_NAME" \
+            '{
+              action: "validate",
+              invite_code: $invite_code,
+              step_number: ($step_number | tonumber),
+              repo_name: $repo_name
+            }')
+
+          # Use a long read timeout — validation may run multiple
+          # MySQL checks and take a few minutes to complete.
+          aws lambda invoke \
+            --function-name "$LAMBDA_FUNCTION" \
+            --cli-binary-format raw-in-base64-out \
+            --cli-read-timeout 300 \
+            --payload "$PAYLOAD" \
+            --region "$AWS_REGION" \
+            /tmp/validation-response.json
+
+          echo "Validator Lambda invocation complete."
+
+      # ------------------------------------------------------------------
+      # 5. Parse validation results
+      # ------------------------------------------------------------------
+      - name: Parse validation results
+        id: parse-results
+        env:
+          STEP_NUMBER: ${{ inputs.step_number }}
+        run: |
+          RESPONSE=$(cat /tmp/validation-response.json)
+
+          # Check for Lambda execution errors
+          if echo "$RESPONSE" | jq -e '.errorMessage' > /dev/null 2>&1; then
+            ERROR_MSG=$(echo "$RESPONSE" | jq -r '.errorMessage')
+            echo "::error::Validator Lambda failed: $ERROR_MSG"
+
+            {
+              echo "## Validation Error"
+              echo ""
+              echo "The validator encountered an internal error:"
+              echo ""
+              echo "> $ERROR_MSG"
+              echo ""
+              echo "This is likely a system issue. Please try again in a few minutes."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            exit 1
+          fi
+
+          # Extract results
+          PASSED=$(echo "$RESPONSE" | jq -r '.passed // false')
+          SCORE=$(echo "$RESPONSE" | jq -r '.score // "N/A"')
+          MAX_SCORE=$(echo "$RESPONSE" | jq -r '.max_score // "N/A"')
+          CHECKS=$(echo "$RESPONSE" | jq -c '.checks // []')
+          HINTS=$(echo "$RESPONSE" | jq -c '.hints // []')
+
+          echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "max_score=$MAX_SCORE" >> "$GITHUB_OUTPUT"
+
+          # Write checks and hints to temp files for the summary step
+          echo "$CHECKS" > /tmp/validation-checks.json
+          echo "$HINTS" > /tmp/validation-hints.json
+
+          if [[ "$PASSED" == "true" ]]; then
+            echo "Step $STEP_NUMBER passed with score $SCORE/$MAX_SCORE!"
+          else
+            echo "Step $STEP_NUMBER did not pass. Score: $SCORE/$MAX_SCORE"
+          fi
+
+      # ------------------------------------------------------------------
+      # 6. On pass: pull latest changes (Lambda may have pushed new content)
+      # ------------------------------------------------------------------
+      - name: Pull latest changes
+        if: steps.parse-results.outputs.passed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+
+      # ------------------------------------------------------------------
+      # 7. Write validation results summary
+      # ------------------------------------------------------------------
+      - name: Write validation summary
+        if: always() && steps.parse-results.outcome == 'success'
+        env:
+          STEP_NUMBER: ${{ inputs.step_number }}
+          PASSED: ${{ steps.parse-results.outputs.passed }}
+          SCORE: ${{ steps.parse-results.outputs.score }}
+          MAX_SCORE: ${{ steps.parse-results.outputs.max_score }}
+        run: |
+          if [[ "$PASSED" == "true" ]]; then
+            STATUS_TEXT="PASSED"
+          else
+            STATUS_TEXT="NOT PASSED"
+          fi
+
+          {
+            echo "## Step $STEP_NUMBER Validation: $STATUS_TEXT"
+            echo ""
+            echo "**Score:** $SCORE / $MAX_SCORE"
+            echo ""
+            echo "### Check Results"
+            echo ""
+            echo "| Check | Result | Details |"
+            echo "|-------|--------|---------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Write individual check results as table rows
+          CHECKS=$(cat /tmp/validation-checks.json)
+          echo "$CHECKS" | jq -r '.[] |
+            "| " + .name + " | " +
+            (if .passed then "Passed" else "Failed" end) +
+            " | " + (.detail // "-") + " |"' >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$PASSED" == "true" ]]; then
+            {
+              echo ""
+              echo "### Congratulations!"
+              echo ""
+              echo "Step $STEP_NUMBER is complete. The next step has been unlocked."
+              echo ""
+              echo "Pull the latest changes to see new instructions:"
+              echo '```bash'
+              echo 'git pull origin main'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo ""
+              echo "### Hints"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            HINTS=$(cat /tmp/validation-hints.json)
+            echo "$HINTS" | jq -r '.[] | "- " + .' >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+            {
+              echo ""
+              echo "### What to Do"
+              echo ""
+              echo "1. Review the failed checks above."
+              echo "2. SSH into your environment and make corrections."
+              echo "3. Update your submission document if needed."
+              echo "4. Run this validation workflow again."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ------------------------------------------------------------------
+      # 8. Set final job status
+      # ------------------------------------------------------------------
+      - name: Set job outcome
+        if: always() && steps.parse-results.outcome == 'success'
+        env:
+          PASSED: ${{ steps.parse-results.outputs.passed }}
+          STEP_NUMBER: ${{ inputs.step_number }}
+        run: |
+          if [[ "$PASSED" != "true" ]]; then
+            echo "::warning::Step $STEP_NUMBER validation did not pass. Review the summary for details."
+          fi

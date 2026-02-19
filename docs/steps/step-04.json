@@ -1,0 +1,41 @@
+{
+  "step": 4,
+  "title": "Security and Performance Fixes",
+  "tier": "Operational",
+  "estimated_time": "45 minutes",
+  "points": 8,
+  "objectives": [
+    "Create least-privilege application database users",
+    "Restrict the root account to localhost-only access",
+    "Identify and add missing indexes on foreign keys and frequently-queried columns",
+    "Fix or optimize slow queries and views"
+  ],
+  "instructions": "## Step 4: Security and Performance Fixes\n\n### Overview\n\nThe ecommerce_db was set up quickly without proper attention to security or performance. In this step, you will harden the database security posture and fix the most critical performance issues.\n\n---\n\n### Part A: Security Hardening\n\n### 4.1 Audit Current Users and Privileges\n\nStart by examining the current user accounts and their privileges:\n\n```sql\nSELECT user, host, authentication_string FROM mysql.user;\nSHOW GRANTS FOR 'root'@'localhost';\nSHOW GRANTS FOR 'root'@'%';\n```\n\nCheck for any users with overly broad privileges.\n\n### 4.2 Restrict Root Access\n\nThe root account should only be accessible from localhost. If root can connect from any host (`%`), fix this:\n\n```sql\n-- Remove remote root access\nDROP USER IF EXISTS 'root'@'%';\n\n-- Verify root is localhost-only\nSELECT user, host FROM mysql.user WHERE user = 'root';\n```\n\nEnsure the root account has a strong password set:\n\n```sql\nALTER USER 'root'@'localhost' IDENTIFIED BY '<strong-password>';\n```\n\n### 4.3 Create Least-Privilege Application Users\n\nCreate application-specific users with only the privileges they need. Do NOT use `GRANT ALL`.\n\n**Application user** (for the web application):\n\n```sql\nCREATE USER 'app_user'@'<app-host>' IDENTIFIED BY '<strong-password>';\n\n-- Grant only what the application needs\nGRANT SELECT, INSERT, UPDATE, DELETE ON ecommerce_db.* TO 'app_user'@'<app-host>';\n```\n\n**Reporting user** (read-only access for dashboards):\n\n```sql\nCREATE USER 'report_user'@'<report-host>' IDENTIFIED BY '<strong-password>';\nGRANT SELECT ON ecommerce_db.* TO 'report_user'@'<report-host>';\n```\n\n**Backup user** (for automated backups):\n\n```sql\nCREATE USER 'backup_user'@'localhost' IDENTIFIED BY '<strong-password>';\nGRANT SELECT, RELOAD, LOCK TABLES, SHOW VIEW, REPLICATION CLIENT, EVENT, TRIGGER ON *.* TO 'backup_user'@'localhost';\n```\n\nApply changes:\n\n```sql\nFLUSH PRIVILEGES;\n```\n\n### 4.4 Run mysql_secure_installation (if not already done)\n\nThis utility handles common security tasks:\n\n```bash\nsudo mysql_secure_installation\n```\n\n---\n\n### Part B: Performance Fixes\n\n### 4.5 Identify Missing Indexes\n\nThe schema has several foreign key columns without indexes, which causes severe performance problems on JOINs and lookups. Systematically check each table:\n\n```sql\n-- List all foreign keys and check for corresponding indexes\nSELECT \n  TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME\nFROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE\nWHERE TABLE_SCHEMA = 'ecommerce_db'\n  AND REFERENCED_TABLE_NAME IS NOT NULL;\n```\n\nFor each foreign key column, check if an index exists:\n\n```sql\nSHOW INDEX FROM <table_name>;\n```\n\nAdd indexes where they are missing. Consider:\n- Foreign key columns that lack indexes\n- Columns frequently used in WHERE clauses (status, email, order_number)\n- Columns used for sorting or grouping\n\n### 4.6 Add Missing Indexes\n\nBased on your analysis, add the missing indexes:\n\n```sql\n-- Example pattern:\nALTER TABLE <table_name> ADD INDEX idx_<column>(<column_name>);\n\n-- For unique constraints:\nALTER TABLE <table_name> ADD UNIQUE INDEX idx_<column>(<column_name>);\n```\n\nConsider the schema carefully. There are columns that should have:\n- Regular indexes (foreign keys, status fields)\n- Unique indexes (email, SKU, order number)\n- Composite indexes (for common query patterns)\n\n### 4.7 Fix Slow Views\n\nThe database has views that use correlated subqueries instead of efficient JOINs. Examine each view:\n\n```sql\nSHOW CREATE VIEW vw_customer_order_summary\\G\nSHOW CREATE VIEW vw_product_performance\\G\nSHOW CREATE VIEW vw_recent_orders_full\\G\n```\n\nRewrite them using JOINs and GROUP BY for better performance. For example, correlated subqueries like:\n\n```sql\n(SELECT COUNT(*) FROM orders WHERE orders.customer_id = c.id)\n```\n\ncan be rewritten as a LEFT JOIN with GROUP BY.\n\nTest performance before and after:\n\n```sql\n-- Before: time the original view\nSELECT * FROM vw_customer_order_summary;\n\n-- After: time the optimized view\nSELECT * FROM vw_customer_order_summary;\n```\n\n### 4.8 Review Stored Procedures\n\nExamine the stored procedures for inefficient patterns:\n\n```sql\nSHOW CREATE PROCEDURE sp_recalculate_order_totals\\G\nSHOW CREATE PROCEDURE sp_daily_sales_report\\G\n```\n\nLook for:\n- Cursor-based row-by-row processing that could be set-based\n- Functions applied to columns in WHERE clauses (preventing index use)\n- Missing error handling\n\nOptimize where possible.\n\n### 4.9 Document Your Changes\n\nCreate two files:\n\n**submissions/security-changes.md**:\n1. Current user audit findings\n2. Changes made to root account\n3. New users created with their specific privileges\n4. Rationale for each privilege choice\n5. Any additional security measures applied\n\n**submissions/performance-fixes.md**:\n1. Missing indexes identified and added (with rationale)\n2. View optimizations (before/after query plans or timing)\n3. Stored procedure improvements\n4. Any other performance-related changes",
+  "deliverables": [
+    "submissions/security-changes.md documenting all security hardening",
+    "submissions/performance-fixes.md documenting all performance improvements",
+    "Least-privilege application users created in MySQL",
+    "Root account restricted to localhost only",
+    "Missing indexes added to foreign key and frequently-queried columns",
+    "Slow views rewritten with JOINs instead of correlated subqueries"
+  ],
+  "hints": [
+    "There are at least 8 foreign key columns missing indexes in the schema",
+    "The customers.email column should have a UNIQUE index",
+    "The products.sku column should also have a UNIQUE index",
+    "orders.order_number is frequently queried and needs an index",
+    "The views use correlated subqueries -- rewrite with LEFT JOIN and GROUP BY",
+    "The sp_recalculate_order_totals procedure uses a cursor -- a single UPDATE with JOIN is faster",
+    "Never grant ALL PRIVILEGES to application users"
+  ],
+  "validation_criteria": [
+    "Root user cannot connect from remote hosts (no root@'%')",
+    "At least one least-privilege application user exists (not GRANT ALL)",
+    "Indexes exist on all foreign key columns",
+    "Unique index exists on customers.email",
+    "Unique index exists on products.sku",
+    "Index exists on orders.order_number",
+    "security-changes.md exists with documented changes",
+    "performance-fixes.md exists with documented changes"
+  ]
+}
