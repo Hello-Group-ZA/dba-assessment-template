@@ -292,24 +292,38 @@
   function buildConnectionItem(label, ip, privateIp) {
     var item = document.createElement('div');
     item.className = 'connection-item';
-    var labelEl = document.createElement('span');
-    labelEl.className = 'conn-label';
-    labelEl.textContent = label;
-    var valueEl = document.createElement('span');
-    valueEl.className = 'conn-value';
-    valueEl.textContent = ip;
-    item.appendChild(labelEl);
-    item.appendChild(valueEl);
+
+    var header = document.createElement('div');
+    header.className = 'conn-header';
+    header.textContent = label;
+    item.appendChild(header);
+
+    var pubRow = document.createElement('div');
+    pubRow.className = 'conn-row';
+    var pubLabel = document.createElement('span');
+    pubLabel.className = 'conn-row-label';
+    pubLabel.textContent = 'Public';
+    var pubValue = document.createElement('span');
+    pubValue.className = 'conn-ip conn-ip-public';
+    pubValue.textContent = ip;
+    pubRow.appendChild(pubLabel);
+    pubRow.appendChild(pubValue);
+    item.appendChild(pubRow);
+
     if (privateIp) {
+      var privRow = document.createElement('div');
+      privRow.className = 'conn-row';
       var privLabel = document.createElement('span');
-      privLabel.className = 'conn-label';
+      privLabel.className = 'conn-row-label';
       privLabel.textContent = 'Private';
       var privValue = document.createElement('span');
-      privValue.className = 'conn-value conn-value-secondary';
+      privValue.className = 'conn-ip conn-ip-private';
       privValue.textContent = privateIp;
-      item.appendChild(privLabel);
-      item.appendChild(privValue);
+      privRow.appendChild(privLabel);
+      privRow.appendChild(privValue);
+      item.appendChild(privRow);
     }
+
     return item;
   }
 
