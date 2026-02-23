@@ -581,28 +581,54 @@ a:hover {
 
 .connection-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
 }
 
 .connection-item {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+.connection-item .conn-header {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.connection-item .conn-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.connection-item .conn-row-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  min-width: 3.5rem;
+}
+
+.connection-item .conn-ip {
+  font-family: var(--font-mono);
   font-size: 0.8125rem;
 }
 
-.connection-item .conn-label {
-  color: var(--text-muted);
-  min-width: 6rem;
-}
-
-.connection-item .conn-value {
-  font-family: var(--font-mono);
+.connection-item .conn-ip-public {
   color: var(--accent-green);
+  font-weight: 500;
 }
 
-.connection-item .conn-value-secondary {
+.connection-item .conn-ip-private {
   color: var(--text-secondary);
 }
 
